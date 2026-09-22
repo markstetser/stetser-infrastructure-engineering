@@ -1,0 +1,12 @@
+# Local editor / OS artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local scratch / evidence not intended for publication
+tmp/
+scratch/
+private/
+evidence-raw/
