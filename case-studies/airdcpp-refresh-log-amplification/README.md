@@ -39,26 +39,31 @@ Scheduled share refreshes generated very large numbers of repetitive blocked-sha
 
 The immediate operational response was to limit log growth externally using operating-system log rotation. This reduced production risk but did not address the underlying application behavior.
 
-## Binary Forensics
+## Recovered Runtime Patch Artifact
 
-A leftover executable named `airdcppd` was later discovered during infrastructure cleanup.
+The initial mitigation consisted of a runtime patch that neutralized the excessive `File matches the share skiplist` log message inside the AirDC++ executable.
 
-Comparison with the current production AirDC++ binary showed:
+The patch was intended as a containment measure rather than a root-cause fix. It suppressed the immediate logging symptom, but it did not address the underlying refresh behavior that was generating the repeated messages.
+
+Later root-cause analysis traced the issue into the recursive share-refresh logic and showed that blocked-file errors were being aggregated only at per-directory scope.
+
+A copy of the modified executable remained on the host after production had returned to an unmodified AirDC++ binary. During a later infrastructure cleanup, that artifact was rediscovered and preserved long enough to compare against the current production executable.
+
+The comparison showed:
 
 - identical file size;
 - identical reported AirDC++ version;
 - identical executable code section;
 - exactly 31 differing bytes;
-- all 31 differing bytes were located in read-only string data;
-- the production binary contained:
+- all 31 differences located in read-only string data;
+- the current production binary contained `File matches the share skiplist`;
+- the recovered artifact contained 31 NUL bytes at the same location.
 
-```text
-File matches the share skiplist
-```
+This confirmed that the artifact was the earlier runtime mitigation rather than a different build or an unknown executable. No executable instructions had been changed; only the targeted log-message string had been neutralized.
 
-- the older artifact contained 31 NUL bytes at the same location.
+The recovered binary also became useful forensic evidence. It connected the original containment action to the exact message later traced through the source tree, helping distinguish the temporary workaround from the actual root cause.
 
-This showed that the older binary had been deliberately modified to suppress that exact message while leaving executable code unchanged.
+The runtime patch reduced the symptom. The later source investigation explained why the symptom existed and produced a maintainable upstream fix.
 
 ## Source-Level Findings
 
