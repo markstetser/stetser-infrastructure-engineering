@@ -160,41 +160,37 @@ The issue is not that skiplist validation is incorrect.
 
 The issue is the scope of reporting aggregation.
 
-Expected skiplist matches during a bulk recursive refresh are aggregated only per directory rather than per refresh task.
+Before the patch, expected skiplist matches during a bulk recursive refresh were aggregated only per directory.
 
-The resulting logging behavior is effectively:
+The resulting logging behavior was effectively:
 
 ```text
 O(number of affected directories)
 ```
 
-rather than:
+After the patch, blocked-file errors are aggregated across the full recursive traversal of each refresh path, producing approximately one blocked-file summary per refresh path for a repeated expected condition.
 
-```text
-O(1) per refresh
-```
+## Implemented Fix
 
-for a repeated expected condition.
+The final patch changes the lifetime of `ErrorCollector` from one recursive directory invocation to one refresh path.
 
-## Proposed Fix
+Previously, every recursive `ShareBuilder::buildTree(...)` call created a new collector. That meant identical blocked-file errors were aggregated only within an individual directory.
 
-Possible approaches include:
+The patch now:
 
-1. Aggregate blocked-share errors at refresh-task scope and emit a single summary when the refresh completes.
-2. Suppress expected skiplist-match reporting during scheduled/full refreshes.
-3. Provide a configurable verbosity option for blocked-share reporting during bulk refresh operations.
+1. Creates one `ErrorCollector` in the top-level `ShareBuilder::buildTree()` call.
+2. Passes that collector by reference through the recursive traversal.
+3. Emits the blocked-file summary after the entire refresh path has been scanned.
 
-A refresh-level summary could resemble:
+This preserves the existing batching behavior while moving the aggregation boundary to the level where it is useful for large recursive refreshes.
 
-```text
-Share refresh completed: N files skipped due to configured share rules
-```
+Directory validation logging remains unchanged.
 
 ## Operational Containment
 
-Until the application behavior is changed, external log rotation remains a reasonable defensive control for large deployments.
+External log rotation remains a reasonable defensive control for large deployments.
 
-This limits disk-consumption risk but should be treated as containment rather than root-cause remediation.
+It limits disk-consumption risk, but it should be treated as containment rather than root-cause remediation. The source-level change addresses the amplification mechanism itself.
 
 ## Engineering Lessons
 
@@ -209,6 +205,8 @@ This investigation reinforced several general lessons:
 
 ## Upstream Status
 
-An upstream AirDC++ pull request is planned based on these findings.
+A source-level fix has been implemented, committed, and validated successfully using the project's existing Windows build pipeline.
 
-The proposed patch will be developed and validated separately before submission.
+The change was submitted upstream as AirDC++ pull request #225, titled `Aggregate blocked share errors per refresh path`.
+
+The pull request is currently open for maintainer review.
